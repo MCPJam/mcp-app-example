@@ -7,7 +7,9 @@
     "build": "tsc --noEmit && cross-env INPUT=mcp-app.html vite build && tsc -p tsconfig.server.json",
     "serve": "tsx --watch main.ts",
     "start": "npm run build && npm run serve",
-    "dev": "cross-env NODE_ENV=development concurrently \"cross-env INPUT=mcp-app.html vite build --watch\" \"npm run serve\""
+    "dev": "cross-env NODE_ENV=development concurrently \"cross-env INPUT=mcp-app.html vite build --watch\" \"npm run serve\"",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "npm run build && wrangler dev"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.0",
@@ -17,6 +19,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.30.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.0",
     "@types/node": "22.10.0",
@@ -25,6 +28,7 @@
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",
-    "vite-plugin-singlefile": "^2.3.0"
+    "vite-plugin-singlefile": "^2.3.0",
+    "wrangler": "^4.76.0"
   }
 }
