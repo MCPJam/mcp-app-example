@@ -1,0 +1,30 @@
+{
+  "name": "mcp-app-io-explainer",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP App that visually explains how tool inputs and outputs drive UI rendering",
+  "scripts": {
+    "build": "tsc --noEmit && cross-env INPUT=mcp-app.html vite build && tsc -p tsconfig.server.json",
+    "serve": "tsx --watch main.ts",
+    "start": "npm run build && npm run serve",
+    "dev": "cross-env NODE_ENV=development concurrently \"cross-env INPUT=mcp-app.html vite build --watch\" \"npm run serve\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.24.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.0",
+    "@types/node": "22.10.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
