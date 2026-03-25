@@ -4,93 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <title>IO Explainer</title>
+  <title>MCP App Demo</title>
 </head>
 <body>
   <main class="main">
 
-    <!-- Phase banner shown while waiting -->
-    <div id="waiting" class="phase-banner">
-      <div class="phase-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M12 6v6l4 2"/>
-        </svg>
-      </div>
-      <p class="phase-text">Waiting for tool call&hellip;</p>
-      <p class="phase-sub">Ask the model to call <code>create-status-card</code></p>
+    <!-- Waiting state -->
+    <div id="waiting" class="waiting">
+      <div class="waiting-dot"></div>
+      <p class="waiting-label">Waiting for tool call&hellip;</p>
+      <p class="waiting-hint">Ask the model to call <code>display-mcp-app</code></p>
     </div>
 
     <!-- Streaming preview -->
-    <div id="streaming" class="phase-banner hidden">
-      <div class="phase-icon pulse">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-        </svg>
-      </div>
-      <p class="phase-text">Streaming inputs&hellip;</p>
+    <div id="streaming" class="waiting hidden">
+      <div class="waiting-dot pulse"></div>
+      <p class="waiting-label">Streaming&hellip;</p>
       <pre id="streaming-json" class="streaming-json"></pre>
     </div>
 
-    <!-- Main 3-panel explainer (hidden until tool completes) -->
-    <div id="explainer" class="explainer hidden">
-
-      <!-- Header -->
-      <div class="explainer-header">
-        <h2 class="explainer-title">How Tool I/O Drives the UI</h2>
-        <p class="explainer-subtitle">Every visual element traces back to a tool input or output</p>
-      </div>
-
-      <!-- 3-column layout -->
-      <div class="columns">
-
-        <!-- LEFT: Inputs -->
-        <section class="panel panel-inputs">
-          <h3 class="panel-heading">
-            <span class="panel-dot dot-input"></span>
-            Tool Inputs
-          </h3>
-          <p class="panel-desc">Arguments the model sent</p>
-          <ul class="field-list" id="input-fields"></ul>
-        </section>
-
-        <!-- CENTER: Rendered Card -->
-        <section class="panel panel-card">
-          <h3 class="panel-heading">Rendered UI</h3>
-          <p class="panel-desc">What the user sees</p>
-          <div class="card" id="rendered-card">
-            <div class="card-status-bar" id="card-status-bar"></div>
-            <div class="card-body">
-              <div class="card-icon" id="card-icon"></div>
-              <h4 class="card-title" id="card-title"></h4>
-              <p class="card-message" id="card-message"></p>
-              <div class="progress-track">
-                <div class="progress-fill" id="card-progress"></div>
-              </div>
-              <span class="progress-label" id="card-progress-label"></span>
-            </div>
-            <div class="card-footer" id="card-footer"></div>
-          </div>
-        </section>
-
-        <!-- RIGHT: Outputs -->
-        <section class="panel panel-outputs">
-          <h3 class="panel-heading">
-            <span class="panel-dot dot-output"></span>
-            Tool Outputs
-          </h3>
-          <p class="panel-desc">Structured result returned</p>
-          <ul class="field-list" id="output-fields"></ul>
-        </section>
-
-      </div>
-
-      <!-- Connection legend -->
-      <div class="legend">
-        <span class="legend-item"><span class="legend-line legend-input"></span> Input &rarr; Visual</span>
-        <span class="legend-item"><span class="legend-line legend-output"></span> Output &rarr; Visual</span>
-      </div>
-
+    <!-- Rendered card -->
+    <div id="card" class="card hidden">
+      <h1 id="card-title" class="card-title"></h1>
+      <p id="card-body" class="card-body"></p>
+      <time id="card-time" class="card-time"></time>
     </div>
 
   </main>
