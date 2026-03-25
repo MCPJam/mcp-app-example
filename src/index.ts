@@ -65,6 +65,84 @@ export class MyMCP extends McpAgent {
         ],
       }),
     );
+
+    // ── Sample Tool (standard SDK method) ─────────────────────────
+    // Contrast with registerAppTool above: no UI resource, just I/O.
+    this.server.tool(
+      "greet",
+      "Returns a friendly greeting for the given name",
+      {
+        name: z.string().describe("The name of the person to greet"),
+      },
+      async ({ name }) => ({
+        content: [
+          {
+            type: "text" as const,
+            text: `Hello, ${name}! Welcome to the MCP App Demo server.`,
+          },
+        ],
+      }),
+    );
+
+    // ── Sample Prompt ─────────────────────────────────────────────
+    // Prompts are reusable message templates that clients can discover
+    // and fill in with parameters.
+    this.server.prompt(
+      "explain-concept",
+      "Generates a prompt asking for a clear explanation of a concept",
+      {
+        concept: z.string().describe("The concept or topic to explain"),
+        audience: z
+          .enum(["beginner", "intermediate", "expert"])
+          .describe("Target audience level"),
+      },
+      async ({ concept, audience }) => ({
+        description: `Explain "${concept}" for a ${audience} audience`,
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text:
+                `Please explain the concept of "${concept}" ` +
+                `in a way that is appropriate for a ${audience}-level audience. ` +
+                `Use clear language, relevant examples, and keep it concise.`,
+            },
+          },
+        ],
+      }),
+    );
+
+    // ── Sample Resource ───────────────────────────────────────────
+    // Resources expose read-only data that clients can fetch by URI.
+    this.server.resource(
+      "server-info",
+      "info://mcp-demo/server-info",
+      {
+        description: "General information about this MCP demo server",
+        mimeType: "text/plain",
+      },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "text/plain",
+            text:
+              "MCP App Demo Server v1.0.0\n" +
+              "==========================\n\n" +
+              "This is an educational MCP server demonstrating the three core primitives:\n\n" +
+              "1. Tools     – Functions the client can invoke (e.g., 'greet', 'display-mcp-app')\n" +
+              "2. Prompts   – Reusable message templates (e.g., 'explain-concept')\n" +
+              "3. Resources – Read-only data the client can fetch (e.g., this document)\n\n" +
+              "Built with:\n" +
+              "  - @modelcontextprotocol/sdk\n" +
+              "  - @modelcontextprotocol/ext-apps\n" +
+              "  - Cloudflare Workers (agents package)\n" +
+              "  - Zod for schema validation\n",
+          },
+        ],
+      }),
+    );
   }
 }
 
