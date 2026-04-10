@@ -24,6 +24,10 @@
 	"observability": {
 		"enabled": true
 	},
+	"vars": {
+		"STYTCH_PROJECT_ID": "project-test-526baac7-7835-4989-97bc-870c6d0d4767",
+		"STYTCH_DOMAIN": "https://copy-currant-4827.customers.stytch.dev"
+	},
 	"routes": [
 		{ "pattern": "learn.mcpjam.com", "custom_domain": true }
 	]

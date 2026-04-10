@@ -6,7 +6,8 @@
   "description": "MCP App that visually explains how tool inputs and outputs drive UI rendering",
   "scripts": {
     "build:ui": "cross-env INPUT=mcp-app.html vite build",
-    "build": "npm run build:ui",
+    "build:authorize": "cross-env INPUT=authorize.html vite build",
+    "build": "npm run build:ui && npm run build:authorize",
     "deploy": "npm run build && wrangler deploy",
     "dev": "npm run build:ui && wrangler dev",
     "start": "wrangler dev",
@@ -14,10 +15,16 @@
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "@stytch/react": "^20.0.5",
+    "@stytch/vanilla-js": "^6.0.5",
     "agents": "^0.5.0",
+    "jose": "^6.2.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
     "cross-env": "^10.1.0",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",

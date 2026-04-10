@@ -5,8 +5,10 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 import mcpAppHtml from "../dist/mcp-app.html";
+import authorizeHtml from "../dist/authorize.html";
 
 const RESOURCE_URI = "ui://mcp-demo/mcp-app.html";
 
@@ -146,11 +148,99 @@ export class MyMCP extends McpAgent {
   }
 }
 
+// ── Auth helpers ──────────────────────────────────────────────────
+
+function getResourceMetadataUrl(request: Request): string {
+  const url = new URL(request.url);
+  return `${url.origin}/.well-known/oauth-protected-resource`;
+}
+
+function unauthorized(request: Request): Response {
+  return new Response(JSON.stringify({ error: "unauthorized" }), {
+    status: 401,
+    headers: {
+      "Content-Type": "application/json",
+      "WWW-Authenticate": `Bearer resource_metadata="${getResourceMetadataUrl(request)}"`,
+    },
+  });
+}
+
+async function verifyToken(token: string, env: Env): Promise<boolean> {
+  try {
+    const issuer = env.STYTCH_DOMAIN;
+    const jwksUrl = new URL("/.well-known/jwks.json", env.STYTCH_DOMAIN);
+    const jwks = createRemoteJWKSet(jwksUrl);
+    await jwtVerify(token, jwks, { issuer });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Worker entrypoint ────────────────────────────────────────────
+
 export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
 
+    // RFC 9728 — Protected Resource Metadata
+    if (
+      url.pathname === "/.well-known/oauth-protected-resource" ||
+      url.pathname === "/.well-known/oauth-protected-resource/mcp"
+    ) {
+      return new Response(
+        JSON.stringify({
+          resource: `${url.origin}/mcp`,
+          authorization_servers: [`${env.STYTCH_DOMAIN}/`],
+          scopes_supported: ["openid", "email", "profile"],
+          bearer_methods_supported: ["header"],
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Proxy Stytch's OAuth Authorization Server Metadata
+    if (
+      url.pathname === "/.well-known/oauth-authorization-server" ||
+      url.pathname === "/.well-known/oauth-authorization-server/mcp"
+    ) {
+      const res = await fetch(
+        new URL("/.well-known/oauth-authorization-server", env.STYTCH_DOMAIN),
+      );
+      const metadata = await res.json();
+      return new Response(JSON.stringify(metadata), {
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // Stytch IdentityProvider — OAuth authorize + login pages
+    if (url.pathname === "/oauth/authorize" || url.pathname === "/login") {
+      return new Response(authorizeHtml, {
+        headers: { "Content-Type": "text/html" },
+      });
+    }
+
+    // MCP endpoint — require Bearer token
     if (url.pathname === "/mcp") {
+      const authHeader = request.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return unauthorized(request);
+      }
+
+      const token = authHeader.slice(7);
+      const valid = await verifyToken(token, env);
+      if (!valid) {
+        return unauthorized(request);
+      }
+
       return MyMCP.serve("/mcp").fetch(request, env, ctx);
     }
 
