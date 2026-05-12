@@ -16,6 +16,7 @@ window.addEventListener("message", (ev) => {
 });
 
 const sections = {
+  mcp: document.getElementById("section-mcp")!,
   ui: document.getElementById("section-ui")!,
   runtime: document.getElementById("section-runtime")!,
   deltas: document.getElementById("section-deltas")!,
@@ -148,14 +149,37 @@ statusEl.textContent = "Connecting to host...";
 
 app
   .connect()
-  .then(() => {
+  .then(async () => {
     const hostContext = app.getHostContext() ?? undefined;
     const uiInit = findUiInitializeResult(rawMessages) ?? {};
     const runtime = captureRuntime();
 
+    let mcp: HostProbeSnapshot["mcp"] = undefined;
+    try {
+      const result = (await callTool("get-mcp-init", {})) as
+        | {
+            structuredContent?: {
+              clientInfo?: unknown;
+              clientCapabilities?: unknown;
+            };
+          }
+        | undefined;
+      const sc = result?.structuredContent;
+      if (sc) {
+        mcp = {
+          clientInfo: sc.clientInfo,
+          clientCapabilities: sc.clientCapabilities,
+        };
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      errors.push({ where: "get-mcp-init", message });
+    }
+
     snapshot = {
       schemaVersion: 1,
       capturedAt: new Date().toISOString(),
+      mcp,
       uiInitialize: {
         protocolVersion: uiInit.protocolVersion,
         hostInfo: uiInit.hostInfo,
@@ -167,6 +191,7 @@ app
       errors: [...errors],
     };
 
+    render("mcp", snapshot.mcp ?? { error: "get-mcp-init returned no data" });
     render("ui", snapshot.uiInitialize);
     render("runtime", snapshot.runtime);
     render("deltas", snapshot.deltas);

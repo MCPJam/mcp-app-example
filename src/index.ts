@@ -156,6 +156,42 @@ export class MyMCP extends McpAgent {
 
     registerAppTool(
       this.server,
+      "get-mcp-init",
+      {
+        title: "Get MCP Initialize Params",
+        description:
+          "Return the clientInfo and clientCapabilities the host's MCP " +
+          "client sent on the outer `initialize` request. The host-probe " +
+          "View cannot see this layer (it only sees ui/initialize), so it " +
+          "calls this tool to surface MCP-level capabilities like roots, " +
+          "sampling, elicitation, and tasks.",
+        inputSchema: z.object({}),
+        _meta: {},
+      },
+      async () => {
+        const underlying = (this.server as { server?: unknown }).server as
+          | {
+              getClientVersion?: () => unknown;
+              getClientCapabilities?: () => unknown;
+            }
+          | undefined;
+        const clientInfo = underlying?.getClientVersion?.() ?? null;
+        const clientCapabilities =
+          underlying?.getClientCapabilities?.() ?? null;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ clientInfo, clientCapabilities }, null, 2),
+            },
+          ],
+          structuredContent: { clientInfo, clientCapabilities },
+        };
+      },
+    );
+
+    registerAppTool(
+      this.server,
       "get-host-probe",
       {
         title: "Get Last Host Probe",
