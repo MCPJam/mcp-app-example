@@ -21,6 +21,25 @@ type RawInitializeParams = {
   clientInfo?: unknown;
 };
 
+/**
+ * Parse a CSP header / meta-tag value into directive → source-list.
+ *
+ * Whitespace-separated directives split by `;`. Source-list values
+ * preserved verbatim (so quoted tokens like `'self'` and `'unsafe-inline'`
+ * remain identifiable). Directive names lowercased; values not normalized.
+ */
+function parseCsp(csp: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const raw of csp.split(";")) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const [name, ...values] = trimmed.split(/\s+/);
+    if (!name) continue;
+    out.set(name.toLowerCase(), values);
+  }
+  return out;
+}
+
 async function getInitializeParamsFromStorage(
   agent: unknown,
 ): Promise<RawInitializeParams | undefined> {
@@ -524,6 +543,42 @@ export class MyMCP extends McpAgent {
           pass: boolean;
         }> = [];
 
+        // Parse meta-tag CSP and flag directive-level regressions. Empirical
+        // probes are noisy (DNS failures, network errors, opaque responses
+        // all look the same); the CSP string itself is the unambiguous
+        // source of truth. If the host shipped a wildcard `connect-src *`
+        // when the resource declared specific connectDomains, that's a
+        // strict SEP-1865 violation regardless of what the probes report.
+        const metaCsp = lastProbe.runtime.policies.metaCsp ?? "";
+        const directives = parseCsp(metaCsp);
+        const cspWarnings: string[] = [];
+        const wildcardDirectives: string[] = [];
+        for (const directive of [
+          "connect-src",
+          "script-src",
+          "style-src",
+          "img-src",
+          "frame-src",
+          "default-src",
+        ]) {
+          const values = directives.get(directive);
+          if (values?.includes("*")) {
+            wildcardDirectives.push(directive);
+          }
+        }
+        if (wildcardDirectives.length > 0) {
+          cspWarnings.push(
+            `CSP contains wildcard (*) in ${wildcardDirectives.join(", ")} — ` +
+              `host is not enforcing declared _meta.ui.csp (SEP-1865 violation: ` +
+              `host MUST NOT loosen declared CSP).`,
+          );
+        }
+        if (!metaCsp) {
+          cspWarnings.push(
+            "No meta-tag CSP was captured. Host may not be injecting CSP into the View at all.",
+          );
+        }
+
         for (const probe of probes) {
           // Implicit per-expectation rules: declared SHOULD be ok, canary
           // SHOULD be blocked.
@@ -584,13 +639,17 @@ export class MyMCP extends McpAgent {
           });
         }
 
-        const allPass = checks.every((c) => c.pass);
+        // CSP-directive failure is a hard fail — overrides empirical
+        // probes, which can be misleading (e.g. DNS-unresolvable canaries
+        // appearing "blocked").
+        const allPass =
+          checks.every((c) => c.pass) && cspWarnings.length === 0;
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify(
-                { pass: allPass, checks, metaCsp: lastProbe.runtime.policies.metaCsp },
+                { pass: allPass, cspWarnings, checks, metaCsp },
                 null,
                 2,
               ),
@@ -598,8 +657,9 @@ export class MyMCP extends McpAgent {
           ],
           structuredContent: {
             pass: allPass,
+            cspWarnings,
             checks,
-            metaCsp: lastProbe.runtime.policies.metaCsp,
+            metaCsp,
           },
         };
       },

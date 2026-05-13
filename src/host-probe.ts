@@ -144,9 +144,11 @@ probeBtn.addEventListener("click", async () => {
       url: "https://cdn.jsdelivr.net/npm/lodash@4.17.21/package.json",
       expectation: "declared",
     },
-    // Canary: not in declared connectDomains. If this succeeds, the host
-    // failed to enforce CSP — strict regression.
-    { url: "https://canary.invalid.example/", expectation: "canary" },
+    // Canary: not in declared connectDomains. MUST be a real, resolvable
+    // URL — otherwise `ok:false` is ambiguous between "CSP blocked" and
+    // "DNS failed", and the regression check becomes a false positive.
+    // example.com is IANA-reserved and guaranteed to respond.
+    { url: "https://example.com/", expectation: "canary" },
   ]);
   if (snapshot) {
     snapshot.runtime.cspProbes = cspProbes;
