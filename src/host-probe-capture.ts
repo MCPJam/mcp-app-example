@@ -71,16 +71,17 @@ export function captureRuntime(): HostProbeSnapshot["runtime"] {
 }
 
 export async function runCspProbes(
-  urls: string[],
+  probes: Array<{ url: string; expectation: "declared" | "canary" }>,
 ): Promise<NonNullable<HostProbeSnapshot["runtime"]["cspProbes"]>> {
   const results: NonNullable<HostProbeSnapshot["runtime"]["cspProbes"]> = [];
-  for (const url of urls) {
+  for (const { url, expectation } of probes) {
     try {
       await fetch(url, { mode: "no-cors" });
-      results.push({ url, ok: true, errorName: null });
+      results.push({ url, expectation, ok: true, errorName: null });
     } catch (e) {
       results.push({
         url,
+        expectation,
         ok: false,
         errorName: e instanceof Error ? e.name : String(e),
       });

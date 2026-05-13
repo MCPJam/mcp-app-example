@@ -297,6 +297,12 @@ export class MyMCP extends McpAgent {
       },
     );
 
+    // Declared CSP/permissions on the probe resource. The host MUST enforce
+    // this allow-list — and host configs (e.g. inspector mcpProfile) MAY
+    // further restrict (deny) but MUST NOT loosen (SEP-1865 §Host Behavior).
+    // The View's runtime probes MUST stay in lockstep with these domains
+    // (see src/host-probe.ts cspProbes) so assert-host-probe-csp can flag
+    // both over-restriction and loosening regressions.
     registerAppResource(
       this.server,
       RESOURCE_URI_PROBE,
@@ -308,9 +314,374 @@ export class MyMCP extends McpAgent {
             uri: RESOURCE_URI_PROBE,
             mimeType: RESOURCE_MIME_TYPE,
             text: hostProbeHtml,
+            _meta: {
+              ui: {
+                csp: {
+                  connectDomains: [
+                    "https://api.openai.com",
+                    "https://api.anthropic.com",
+                    "https://cdn.jsdelivr.net",
+                  ],
+                  resourceDomains: ["https://cdn.jsdelivr.net"],
+                },
+                permissions: {
+                  clipboardWrite: {},
+                },
+              },
+            },
           },
         ],
       }),
+    );
+
+    // ── Regression assertion tools ─────────────────────
+    // These exist to catch regressions in inspector PR 2103
+    // (mcpProfile: clientInfo / supportedProtocolVersions pin + sandbox
+    // CSP/permissions overrides). Each returns structured pass/fail so
+    // they're cheap to script against during manual smoke tests.
+
+    registerAppTool(
+      this.server,
+      "assert-mcp-init",
+      {
+        title: "Assert MCP Initialize Params",
+        description:
+          "Verify that the host's MCP `initialize` request carried the " +
+          "expected clientInfo and protocolVersion. Used to regression-test " +
+          "inspector mcpProfile clientInfo / supportedProtocolVersions pins. " +
+          "Every field is optional; only provided fields are checked. " +
+          "clientInfoExtras checks non-standard keys (e.g. " +
+          "defaultClientInfoExtras from mcpProfile). Strict equality only.",
+        inputSchema: z.object({
+          expectedClientName: z.string().optional(),
+          expectedClientVersion: z.string().optional(),
+          expectedClientInfoExtras: z.record(z.string(), z.unknown()).optional(),
+          expectedProtocolVersion: z.string().optional(),
+        }),
+        _meta: {},
+      },
+      async (expected) => {
+        const raw = await getInitializeParamsFromStorage(this);
+        const underlying = (this.server as { server?: unknown }).server as
+          | {
+              getClientVersion?: () => unknown;
+              getClientCapabilities?: () => unknown;
+            }
+          | undefined;
+        const clientInfo =
+          (raw?.clientInfo as Record<string, unknown> | undefined) ??
+          (underlying?.getClientVersion?.() as
+            | Record<string, unknown>
+            | undefined);
+        const protocolVersion = raw?.protocolVersion ?? null;
+
+        const checks: Array<{
+          field: string;
+          expected: unknown;
+          actual: unknown;
+          pass: boolean;
+        }> = [];
+
+        if (expected.expectedClientName !== undefined) {
+          const actual = clientInfo?.name;
+          checks.push({
+            field: "clientInfo.name",
+            expected: expected.expectedClientName,
+            actual,
+            pass: actual === expected.expectedClientName,
+          });
+        }
+        if (expected.expectedClientVersion !== undefined) {
+          const actual = clientInfo?.version;
+          checks.push({
+            field: "clientInfo.version",
+            expected: expected.expectedClientVersion,
+            actual,
+            pass: actual === expected.expectedClientVersion,
+          });
+        }
+        if (expected.expectedClientInfoExtras !== undefined) {
+          for (const [key, expectedVal] of Object.entries(
+            expected.expectedClientInfoExtras,
+          )) {
+            const actual = clientInfo?.[key];
+            checks.push({
+              field: `clientInfo.${key}`,
+              expected: expectedVal,
+              actual,
+              pass:
+                JSON.stringify(actual) === JSON.stringify(expectedVal),
+            });
+          }
+        }
+        if (expected.expectedProtocolVersion !== undefined) {
+          checks.push({
+            field: "protocolVersion",
+            expected: expected.expectedProtocolVersion,
+            actual: protocolVersion,
+            pass: protocolVersion === expected.expectedProtocolVersion,
+          });
+        }
+
+        const allPass = checks.every((c) => c.pass);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { pass: allPass, checks, actual: { clientInfo, protocolVersion } },
+                null,
+                2,
+              ),
+            },
+          ],
+          structuredContent: {
+            pass: allPass,
+            checks,
+            actual: { clientInfo, protocolVersion },
+          },
+        };
+      },
+    );
+
+    registerAppTool(
+      this.server,
+      "assert-host-probe-csp",
+      {
+        title: "Assert Sandbox CSP Enforcement",
+        description:
+          "Verify that the most recent host-probe snapshot's empirical CSP " +
+          "probes match expectations. Used to regression-test inspector " +
+          "mcpProfile.csp overrides (host MAY further restrict, MUST NOT " +
+          "loosen the server's declared CSP).\n\n" +
+          "Behavior:\n" +
+          "  - With no input: pass iff every `declared` probe succeeded AND " +
+          "every `canary` probe was blocked. A canary success is a strict " +
+          "spec violation (host loosened CSP).\n" +
+          "  - With expectedBlockedUrls: those URLs are *additionally* " +
+          "required to be blocked. Use this to verify a deny override " +
+          "(e.g. inspector denies api.openai.com → assert it's blocked).\n" +
+          "  - With expectedAllowedUrls: those URLs are required to be " +
+          "allowed.\n\n" +
+          "Run start-host-probe first and click `Run CSP probes` in the View.",
+        inputSchema: z.object({
+          expectedAllowedUrls: z.array(z.string()).optional(),
+          expectedBlockedUrls: z.array(z.string()).optional(),
+        }),
+        _meta: {},
+      },
+      async ({ expectedAllowedUrls, expectedBlockedUrls }) => {
+        if (!this.lastProbe) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "no-probe-yet — run start-host-probe and click `Run CSP probes` first",
+              },
+            ],
+            structuredContent: { pass: false, reason: "no-probe-yet" as const },
+          };
+        }
+        const probes = this.lastProbe.runtime.cspProbes ?? [];
+        if (probes.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "no-csp-probes-yet — click `Run CSP probes` in the host-probe View",
+              },
+            ],
+            structuredContent: {
+              pass: false,
+              reason: "no-csp-probes-yet" as const,
+            },
+          };
+        }
+
+        const checks: Array<{
+          url: string;
+          rule: string;
+          expectedAllowed: boolean;
+          actualAllowed: boolean;
+          pass: boolean;
+        }> = [];
+
+        for (const probe of probes) {
+          // Implicit per-expectation rules: declared SHOULD be ok, canary
+          // SHOULD be blocked.
+          const expectedAllowed = probe.expectation === "declared";
+          checks.push({
+            url: probe.url,
+            rule:
+              probe.expectation === "declared"
+                ? "declared→allowed"
+                : "canary→blocked",
+            expectedAllowed,
+            actualAllowed: probe.ok,
+            pass: probe.ok === expectedAllowed,
+          });
+        }
+
+        // Explicit per-URL overrides from input (let users assert deny/
+        // restrictTo behavior on top of the implicit rules).
+        const byUrl = new Map(probes.map((p) => [p.url, p]));
+        for (const url of expectedAllowedUrls ?? []) {
+          const probe = byUrl.get(url);
+          if (!probe) {
+            checks.push({
+              url,
+              rule: "expectedAllowed",
+              expectedAllowed: true,
+              actualAllowed: false,
+              pass: false,
+            });
+            continue;
+          }
+          checks.push({
+            url,
+            rule: "expectedAllowed",
+            expectedAllowed: true,
+            actualAllowed: probe.ok,
+            pass: probe.ok === true,
+          });
+        }
+        for (const url of expectedBlockedUrls ?? []) {
+          const probe = byUrl.get(url);
+          if (!probe) {
+            checks.push({
+              url,
+              rule: "expectedBlocked",
+              expectedAllowed: false,
+              actualAllowed: false,
+              pass: false,
+            });
+            continue;
+          }
+          checks.push({
+            url,
+            rule: "expectedBlocked",
+            expectedAllowed: false,
+            actualAllowed: probe.ok,
+            pass: probe.ok === false,
+          });
+        }
+
+        const allPass = checks.every((c) => c.pass);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { pass: allPass, checks, metaCsp: this.lastProbe.runtime.policies.metaCsp },
+                null,
+                2,
+              ),
+            },
+          ],
+          structuredContent: {
+            pass: allPass,
+            checks,
+            metaCsp: this.lastProbe.runtime.policies.metaCsp,
+          },
+        };
+      },
+    );
+
+    registerAppTool(
+      this.server,
+      "assert-host-probe-permissions",
+      {
+        title: "Assert Sandbox Permissions Policy",
+        description:
+          "Verify that the most recent host-probe snapshot's iframe " +
+          "Permissions-Policy / `allow` attribute matches expectations. " +
+          "Used to regression-test inspector mcpProfile.permissions " +
+          "overrides. Input lists feature names (e.g. 'camera', " +
+          "'microphone', 'geolocation', 'clipboard-write'). " +
+          "`expectedAllowedFeatures` must appear in the iframe `allow` " +
+          "attribute or document Permissions-Policy. " +
+          "`expectedBlockedFeatures` must NOT appear. " +
+          "Run start-host-probe first.",
+        inputSchema: z.object({
+          expectedAllowedFeatures: z.array(z.string()).optional(),
+          expectedBlockedFeatures: z.array(z.string()).optional(),
+        }),
+        _meta: {},
+      },
+      async ({ expectedAllowedFeatures, expectedBlockedFeatures }) => {
+        if (!this.lastProbe) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "no-probe-yet — run start-host-probe first",
+              },
+            ],
+            structuredContent: { pass: false, reason: "no-probe-yet" as const },
+          };
+        }
+        const allowAttr = this.lastProbe.runtime.frame.allowAttr ?? "";
+        const permissionsPolicy =
+          this.lastProbe.runtime.policies.permissionsPolicy ?? "";
+        // A feature is considered granted if either the iframe's `allow`
+        // attribute lists it, or document.permissionsPolicy.allowedFeatures()
+        // reports it as allowed. Both sources are normalized to lowercased
+        // tokens. Note: `allow` attribute uses kebab-case feature names
+        // (`clipboard-write`), matching the Permissions Policy spec.
+        const tokens = new Set<string>();
+        for (const tok of allowAttr.toLowerCase().split(/[\s;,]+/)) {
+          if (tok) tokens.add(tok);
+        }
+        for (const tok of permissionsPolicy.toLowerCase().split(/\s+/)) {
+          if (tok) tokens.add(tok);
+        }
+
+        const checks: Array<{
+          feature: string;
+          rule: "expectedAllowed" | "expectedBlocked";
+          actualAllowed: boolean;
+          pass: boolean;
+        }> = [];
+
+        for (const feature of expectedAllowedFeatures ?? []) {
+          const allowed = tokens.has(feature.toLowerCase());
+          checks.push({
+            feature,
+            rule: "expectedAllowed",
+            actualAllowed: allowed,
+            pass: allowed,
+          });
+        }
+        for (const feature of expectedBlockedFeatures ?? []) {
+          const allowed = tokens.has(feature.toLowerCase());
+          checks.push({
+            feature,
+            rule: "expectedBlocked",
+            actualAllowed: allowed,
+            pass: !allowed,
+          });
+        }
+
+        const allPass = checks.every((c) => c.pass);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { pass: allPass, checks, allowAttr, permissionsPolicy },
+                null,
+                2,
+              ),
+            },
+          ],
+          structuredContent: {
+            pass: allPass,
+            checks,
+            allowAttr,
+            permissionsPolicy,
+          },
+        };
+      },
     );
 
     // ── Sample Tool (standard SDK method) ─────────────────────

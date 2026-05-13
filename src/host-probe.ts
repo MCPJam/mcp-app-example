@@ -132,10 +132,21 @@ reuploadBtn.addEventListener("click", () => {
 
 probeBtn.addEventListener("click", async () => {
   probeBtn.disabled = true;
+  // The declared URLs MUST match the resource's `_meta.ui.csp.connectDomains`
+  // (see src/index.ts host-probe resource registration). Keeping these in
+  // lockstep is what lets `assert-host-probe-csp` distinguish:
+  //   - declared+blocked  → host over-restricted (or deny override active)
+  //   - canary+allowed    → host LOOSENED declared CSP (SEP-1865 violation)
   const cspProbes = await runCspProbes([
-    "https://api.openai.com/v1/models",
-    "https://api.anthropic.com/v1/messages",
-    "https://cdn.jsdelivr.net/npm/lodash@4.17.21/package.json",
+    { url: "https://api.openai.com/v1/models", expectation: "declared" },
+    { url: "https://api.anthropic.com/v1/messages", expectation: "declared" },
+    {
+      url: "https://cdn.jsdelivr.net/npm/lodash@4.17.21/package.json",
+      expectation: "declared",
+    },
+    // Canary: not in declared connectDomains. If this succeeds, the host
+    // failed to enforce CSP — strict regression.
+    { url: "https://canary.invalid.example/", expectation: "canary" },
   ]);
   if (snapshot) {
     snapshot.runtime.cspProbes = cspProbes;
