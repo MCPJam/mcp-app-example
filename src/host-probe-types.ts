@@ -39,7 +39,13 @@ export interface HostProbeSnapshot {
       metaCsp: string | null;
       permissionsPolicy: string | null;
     };
-    cspProbes?: Array<{ url: string; ok: boolean; errorName: string | null }>;
+    cspProbes?: Array<{
+      url: string;
+      /** "declared" = URL is in resource's _meta.ui.csp; "canary" = NOT in declared list. */
+      expectation: "declared" | "canary";
+      ok: boolean;
+      errorName: string | null;
+    }>;
   };
   deltas: Array<{ at: string; hostContext: Partial<McpUiHostContext> }>;
   errors: Array<{ where: string; message: string }>;
