@@ -207,9 +207,23 @@ app
               clientInfo?: unknown;
               clientCapabilities?: unknown;
             };
+            content?: Array<{ type?: string; text?: string }>;
           }
         | undefined;
-      const sc = result?.structuredContent;
+      // Some hosts (e.g. Cursor 3.4) drop `structuredContent` when proxying
+      // tools/call responses from the View. Fall back to parsing the JSON
+      // we also embed in content[0].text on the server (see src/index.ts).
+      let sc = result?.structuredContent;
+      if (!sc) {
+        const text = result?.content?.find((c) => c?.type === "text")?.text;
+        if (text) {
+          try {
+            sc = JSON.parse(text);
+          } catch {
+            // leave sc undefined; error message below will render
+          }
+        }
+      }
       if (sc) {
         mcp = {
           clientInfo: sc.clientInfo,
