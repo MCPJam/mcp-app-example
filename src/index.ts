@@ -221,6 +221,34 @@ export class MyMCP extends McpAgent {
       },
     );
 
+    // Internal sibling of start-host-probe used by the host-probe View to
+    // populate its MCP-init panel before it uploads via record-host-probe.
+    // Hidden from the model surface (visibility: ["app"]) — model callers
+    // get the same data inline from start-host-probe's response.
+    registerAppTool(
+      this.server,
+      "get-mcp-init",
+      {
+        title: "Get MCP Initialize Params (internal)",
+        description:
+          "Internal helper for the host-probe View. Returns the outer MCP " +
+          "`initialize` clientInfo / clientCapabilities / protocolVersion. " +
+          "Not intended for direct invocation by the model — call " +
+          "start-host-probe instead.",
+        inputSchema: z.object({}),
+        _meta: { ui: { visibility: ["app"] } },
+      },
+      async () => {
+        const mcp = await readMcpInit(this.server, this);
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(mcp, null, 2) },
+          ],
+          structuredContent: mcp,
+        };
+      },
+    );
+
     // Declared CSP/permissions on the probe resource. The host MUST enforce
     // this allow-list — and host configs (e.g. inspector mcpProfile) MAY
     // further restrict (deny) but MUST NOT loosen (SEP-1865 §Host Behavior).
