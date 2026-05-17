@@ -97,7 +97,13 @@ export class MyMCP extends McpAgent {
           body: z.string(),
           renderedAt: z.string(),
         }),
-        _meta: { ui: { resourceUri: RESOURCE_URI } },
+        _meta: {
+          ui: { resourceUri: RESOURCE_URI },
+          // Copilot (m365copilot) doesn't bind UI from _meta.ui.resourceUri
+          // despite its compat docs — it reads OpenAI's flat key. Emit both
+          // so ChatGPT / Claude / Copilot all render the View.
+          "openai/outputTemplate": RESOURCE_URI,
+        },
       },
       async ({ title, body }) => {
         const renderedAt = new Date().toISOString();
@@ -151,7 +157,10 @@ export class MyMCP extends McpAgent {
           "MCP-layer fields still come back as a tool result, so the server " +
           "can be probed from any client.",
         inputSchema: z.object({}),
-        _meta: { ui: { resourceUri: RESOURCE_URI_PROBE } },
+        _meta: {
+          ui: { resourceUri: RESOURCE_URI_PROBE },
+          "openai/outputTemplate": RESOURCE_URI_PROBE,
+        },
       },
       async () => {
         const mcp = await readMcpInit(this.server, this);
